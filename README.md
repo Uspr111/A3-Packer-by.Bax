@@ -127,3 +127,24 @@ MyArma3Project/
   }
 }
 ```
+
+## 📄 Лицензия / License
+
+Данный проект распространяется под пользовательской лицензией.
+This project is distributed under Custom License.
+
+**Коротко / Summary:**
+- Можно изучать код и брать идеи (с указанием источника) / Can study code and borrow ideas (with source attribution)
+- Можно использовать отдельные функции (с указанием авторства) / Can use individual functions (with authorship attribution)
+- Можно предлагать улучшения / Can suggest improvements
+- Нельзя копировать код напрямую / Cannot copy code directly
+- Нельзя использовать коммерчески без разрешения / Cannot use commercially without permission
+
+Подробности см. в файле [LICENSE](./LICENSE).
+See [LICENSE](./LICENSE) file for details.
+
+При использовании идей или кода укажите источник:
+When using ideas or code, please indicate source:
+```
+Спасибо за идею Bax / Thanks for the idea Bax
+```
