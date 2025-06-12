@@ -1,0 +1,105 @@
+{
+  "name": "bax-a3-packer",
+  "displayName": "Bax Arma 3 Packer",
+  "description": "Simple Packer PBO from the context menu",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.101.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "bax-a3-packer.packPBO",
+        "title": "Запаковать в PBO"
+      },
+      {
+        "command": "bax-a3-packer.packPBODev",
+        "title": "Запаковать в PBO (режим разработки)"
+      },
+      {
+        "command": "bax-a3-packer.configureFolderPath",
+        "title": "Настроить путь PBO для папки"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "bax-a3-packer.packPBO",
+          "when": "explorerResourceIsFolder",
+          "group": "1_modification"
+        },
+        {
+          "command": "bax-a3-packer.packPBODev",
+          "when": "explorerResourceIsFolder",
+          "group": "1_modification"
+        },
+        {
+          "command": "bax-a3-packer.configureFolderPath",
+          "when": "explorerResourceIsFolder",
+          "group": "1_modification"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Bax A3 Dev Server",
+      "properties": {
+        "bax-a3-packer.a3ToolsPath": {
+          "type": "string",
+          "default": "",
+          "description": "Путь к папке A3Tools"
+        },
+        "bax-a3-packer.outputPath": {
+          "type": "string",
+          "default": "",
+          "description": "Путь для сохранения PBO файлов по умолчанию"
+        },
+        "bax-a3-packer.folderPaths": {
+          "type": "object",
+          "default": {},
+          "description": "Индивидуальные пути для папок",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "bax-a3-packer.tempPath": {
+          "type": "string",
+          "default": "",
+          "description": "Путь для временных файлов"
+        },
+        "bax-a3-packer.projectPath": {
+          "type": "string",
+          "default": "",
+          "description": "Корневой путь проекта"
+        },
+        "bax-a3-packer.signKey": {
+          "type": "string",
+          "default": "",
+          "description": "Путь к файлу ключа для подписи"
+        },
+        "bax-a3-packer.includeExtensions": {
+          "type": "string",
+          "default": "*.p3d;*.paa;*.pac;*.rtm;*.sqf;*.sqs;*.bikb;*.fsm;*.wss;*.ogg;*.wav;*.fxy;*.csv;*.html;*.lip;*.txt;*.wrp;*.bisurf;*.rvmat;*.sqm;*.ext;*.cfg;*.shx;*.shp;*.prj;*.dbf;*.xml;*.hqf;*.hpp;*.h;*.inc",
+          "description": "Расширения файлов для включения в PBO"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "pretest": "npm run lint",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.101.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "20.x",
+    "eslint": "^9.25.1",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.5.2"
+  }
+}
