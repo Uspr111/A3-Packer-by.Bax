@@ -3,6 +3,7 @@
   "displayName": "Bax Arma 3 Packer",
   "description": "Simple Packer PBO from the context menu",
   "version": "0.0.1",
+  "repository":"https://github.com/Uspr111/A3-Packer-by.Bax",
   "engines": {
     "vscode": "^1.101.0"
   },
