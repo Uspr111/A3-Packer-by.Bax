@@ -50,7 +50,37 @@ function activate(context) {
 		await configureFolderPath(folderPath);
 	});
 
-	context.subscriptions.push(packDisposable, packDevDisposable, configureDisposable);
+	const binarizeDisposable = vscode.commands.registerCommand('bax-a3-packer.binarizeConfig', async function (uri) {
+		if (!uri || !uri.fsPath) {
+			vscode.window.showErrorMessage('Не выбран файл для бинаризации');
+			return;
+		}
+
+		const filePath = uri.fsPath;
+		if (fs.statSync(filePath).isDirectory()) {
+			vscode.window.showErrorMessage('Выберите файл config.cpp для бинаризации');
+			return;
+		}
+
+		await convertConfig(filePath, true);
+	});
+
+	const unbinarizeDisposable = vscode.commands.registerCommand('bax-a3-packer.unbinarizeConfig', async function (uri) {
+		if (!uri || !uri.fsPath) {
+			vscode.window.showErrorMessage('Не выбран файл для дебинаризации');
+			return;
+		}
+
+		const filePath = uri.fsPath;
+		if (fs.statSync(filePath).isDirectory()) {
+			vscode.window.showErrorMessage('Выберите файл config.bin для дебинаризации');
+			return;
+		}
+
+		await convertConfig(filePath, false);
+	});
+
+	context.subscriptions.push(packDisposable, packDevDisposable, configureDisposable, binarizeDisposable, unbinarizeDisposable);
 }
 
 async function configureFolderPath(folderPath) {
@@ -99,6 +129,119 @@ async function configureFolderPath(folderPath) {
 		: `Путь для папки "${folderName}" установлен: ${newPath}`;
 	
 	vscode.window.showInformationMessage(message);
+}
+
+async function convertConfig(filePath, toBinary) {
+	const config = vscode.workspace.getConfiguration('bax-a3-packer');
+	let a3ToolsPath = config.get('a3ToolsPath');
+
+	if (!a3ToolsPath || !fs.existsSync(a3ToolsPath)) {
+		const action = await vscode.window.showErrorMessage(
+			'Путь к A3Tools не настроен или неверен',
+			'Указать путь', 'Отмена'
+		);
+		
+		if (action === 'Указать путь') {
+			const newPath = await vscode.window.showInputBox({
+				prompt: 'Укажите путь к папке A3Tools',
+				placeHolder: 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Arma 3 Tools',
+				value: a3ToolsPath || ''
+			});
+			
+			if (!newPath) return;
+			
+			if (!fs.existsSync(newPath)) {
+				vscode.window.showErrorMessage('Указанный путь не существует');
+				return;
+			}
+			
+			await config.update('a3ToolsPath', newPath, vscode.ConfigurationTarget.Global);
+			a3ToolsPath = newPath;
+			vscode.window.showInformationMessage('Путь к A3Tools сохранен');
+		} else {
+			return;
+		}
+	}
+
+	const cfgConvertPath = path.join(a3ToolsPath, 'CfgConvert', 'CfgConvert.exe');
+	if (!fs.existsSync(cfgConvertPath)) {
+		vscode.window.showErrorMessage(`CfgConvert не найден по пути: ${cfgConvertPath}`);
+		return;
+	}
+
+	const fileName = path.basename(filePath);
+	const dir = path.dirname(filePath);
+	const ext = path.extname(fileName);
+	const nameWithoutExt = path.basename(fileName, ext);
+	
+	let outputFile, operation, mode;
+	
+	if (toBinary) {
+		if (!fileName.toLowerCase().endsWith('.cpp')) {
+			vscode.window.showErrorMessage('Для бинаризации выберите файл config.cpp');
+			return;
+		}
+		outputFile = path.join(dir, nameWithoutExt + '.bin');
+		operation = 'Бинаризация';
+		mode = '-bin';
+	} else {
+		if (!fileName.toLowerCase().endsWith('.bin')) {
+			vscode.window.showErrorMessage('Для дебинаризации выберите файл config.bin');
+			return;
+		}
+		outputFile = path.join(dir, nameWithoutExt + '.cpp');
+		operation = 'Дебинаризация';
+		mode = '-txt';
+	}
+
+	if (fs.existsSync(outputFile)) {
+		const overwrite = await vscode.window.showWarningMessage(
+			`Файл ${path.basename(outputFile)} уже существует. Перезаписать?`,
+			'Перезаписать', 'Отмена'
+		);
+		
+		if (overwrite !== 'Перезаписать') {
+			return;
+		}
+	}
+
+	await vscode.window.withProgress({
+		location: vscode.ProgressLocation.Notification,
+		title: `${operation} ${fileName}...`,
+		cancellable: false
+	}, async (progress) => {
+		return new Promise((resolve, reject) => {
+			const command = `"${cfgConvertPath}" ${mode} -dst "${outputFile}" "${filePath}"`;
+			
+			exec(command, (error, stdout, stderr) => {
+				if (error) {
+					vscode.window.showErrorMessage(`Ошибка ${operation.toLowerCase()}: ${error.message}`);
+					reject(error);
+					return;
+				}
+				
+				if (stderr && stderr.trim()) {
+					vscode.window.showWarningMessage(`Предупреждения: ${stderr}`);
+				}
+				
+				if (fs.existsSync(outputFile)) {
+					vscode.window.showInformationMessage(`${operation} завершена: ${path.basename(outputFile)}`);
+					
+					if (!toBinary) {
+						vscode.workspace.openTextDocument(outputFile).then(doc => {
+							vscode.window.showTextDocument(doc);
+						}, err => {
+							console.log('Не удалось открыть файл:', err.message);
+						});
+					}
+				} else {
+					vscode.window.showErrorMessage(`${operation} не удалась - выходной файл не создан`);
+				}
+				
+				resolve();
+			});
+		});
+	});
 }
 
 function getOutputPathForFolder(folderPath) {

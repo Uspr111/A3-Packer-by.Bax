@@ -2,7 +2,8 @@
   "name": "bax-a3-packer",
   "displayName": "Bax Arma 3 Packer",
   "description": "Simple Packer PBO from the context menu",
-  "version": "0.0.1",
+  "version": "0.0.2",
+  "publisher": "Bax", 
   "repository":"https://github.com/Uspr111/A3-Packer-by.Bax",
   "engines": {
     "vscode": "^1.101.0"
@@ -25,6 +26,14 @@
       {
         "command": "bax-a3-packer.configureFolderPath",
         "title": "Настроить путь PBO для папки"
+      },
+      {
+        "command": "bax-a3-packer.binarizeConfig",
+        "title": "Бинаризовать config.cpp"
+      },
+      {
+        "command": "bax-a3-packer.unbinarizeConfig",
+        "title": "Дебинаризовать config.bin"
       }
     ],
     "menus": {
@@ -42,6 +51,16 @@
         {
           "command": "bax-a3-packer.configureFolderPath",
           "when": "explorerResourceIsFolder",
+          "group": "1_modification"
+        },
+        {
+          "command": "bax-a3-packer.binarizeConfig",
+          "when": "resourceFilename =~ /config\\.cpp$/i",
+          "group": "1_modification"
+        },
+        {
+          "command": "bax-a3-packer.unbinarizeConfig",
+          "when": "resourceFilename =~ /config\\.bin$/i",
           "group": "1_modification"
         }
       ]
