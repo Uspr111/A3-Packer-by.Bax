@@ -2,7 +2,7 @@
   "name": "bax-a3-packer",
   "displayName": "Bax Arma 3 Packer",
   "description": "Simple Packer PBO from the context menu",
-  "version": "0.0.2",
+  "version": "1.0.5",
   "publisher": "Bax", 
   "repository":"https://github.com/Uspr111/A3-Packer-by.Bax",
   "engines": {
