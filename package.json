@@ -2,7 +2,7 @@
   "name": "bax-a3-packer",
   "displayName": "Bax Arma 3 Packer",
   "description": "Simple Packer PBO from the context menu",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "publisher": "Bax", 
   "repository":"https://github.com/Uspr111/A3-Packer-by.Bax",
   "engines": {
@@ -11,7 +11,9 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onLanguage:sqf"
+  ],
   "main": "./extension.js",
   "contributes": {
     "commands": [
@@ -34,6 +36,10 @@
       {
         "command": "bax-a3-packer.unbinarizeConfig",
         "title": "Дебинаризовать config.bin"
+      },
+      {
+        "command": "bax-a3-packer.reindexFunctions",
+        "title": "Переиндексировать функции SQF"
       }
     ],
     "menus": {

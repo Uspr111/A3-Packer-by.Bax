@@ -3,10 +3,281 @@ const fs = require('fs');
 const path = require('path');
 const { exec } = require('child_process');
 
+const functionCache = new Map();
+let cacheInitialized = false;
+
+async function indexFunctions() {
+	try {
+		functionCache.clear();
+		
+		const files = await vscode.workspace.findFiles('**/fn_*.sqf', '**/node_modules/**');
+		
+		for (const fileUri of files) {
+			const fileName = path.basename(fileUri.fsPath, '.sqf');
+			const functionShortName = fileName.replace(/^fn_/i, '').toLowerCase();
+			functionCache.set(functionShortName, fileUri);
+		}
+		
+		cacheInitialized = true;
+	} catch (error) {
+		cacheInitialized = false;
+	}
+}
+
+function findFunctionDefinitionInDocument(document, functionName) {
+	try {
+		const text = document.getText();
+
+		const escapedName = functionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+		const regex = new RegExp(
+			`\\b${escapedName}\\s*=\\s*(?:(?:compileFinal|compile)\\s*)?\\{`,
+			'i'
+		);
+		
+		const match = regex.exec(text);
+		if (match) {
+			return document.positionAt(match.index);
+		}
+		
+		return null;
+	} catch (error) {
+		return null;
+	}
+}
+
+async function findFunctionFile(functionName) {
+	try {
+		if (!cacheInitialized) {
+			await indexFunctions();
+		}
+
+		const shortName = functionName.replace(/^.*?_fnc_/i, '').toLowerCase();
+		
+		const fileUri = functionCache.get(shortName);
+		
+		return fileUri || null;
+	} catch (error) {
+		return null;
+	}
+}
+
+function parseParam(paramStr) {
+	const simpleMatch = paramStr.match(/^["'](_\w+)["']$/);
+	if (simpleMatch) {
+		return simpleMatch[1];
+	}
+
+	const arrayMatch = paramStr.match(/^\[(.*)\]$/);
+	if (!arrayMatch) {
+		return paramStr;
+	}
+	
+	const arrayContent = arrayMatch[1];
+	const parts = [];
+
+	let currentPart = '';
+	let bracketDepth = 0;
+	let inString = false;
+	let stringChar = null;
+	
+	for (let i = 0; i < arrayContent.length; i++) {
+		const char = arrayContent[i];
+		
+		if ((char === '"' || char === "'") && (i === 0 || arrayContent[i-1] !== '\\')) {
+			if (!inString) {
+				inString = true;
+				stringChar = char;
+			} else if (char === stringChar) {
+				inString = false;
+				stringChar = null;
+			}
+			currentPart += char;
+			continue;
+		}
+		
+		if (inString) {
+			currentPart += char;
+			continue;
+		}
+
+		if (char === '[') {
+			bracketDepth++;
+			currentPart += char;
+			continue;
+		}
+		
+		if (char === ']') {
+			bracketDepth--;
+			currentPart += char;
+			continue;
+		}
+
+		if (char === ',' && bracketDepth === 0) {
+			if (currentPart.trim()) {
+				parts.push(currentPart.trim());
+			}
+			currentPart = '';
+			continue;
+		}
+		
+		currentPart += char;
+	}
+
+	if (currentPart.trim()) {
+		parts.push(currentPart.trim());
+	}
+	
+	if (parts.length === 0) {
+		return paramStr;
+	}
+
+	const nameMatch = parts[0].match(/["'](_\w+)["']/);
+	if (!nameMatch) {
+		return parts[0];
+	}
+	
+	let result = nameMatch[1];
+
+	if (parts.length > 1 && parts[1] !== 'nil') {
+		result += ` = ${parts[1]}`;
+	}
+
+	if (parts.length > 2) {
+		result += ` : ${parts[2]}`;
+	}
+	
+	return result;
+}
+
+function extractParams(text) {
+	try {
+		let cleanText = text
+			.replace(/\/\*[\s\S]*?\*\//g, '')  // /* ... */
+			.replace(/\/\/.*$/gm, '');         // // ...
+
+		const lines = cleanText.split('\n').slice(0, 30).join('\n');
+
+		const paramsMatch = lines.match(/params\s*\[([\s\S]*?)\]\s*;/i);
+		if (!paramsMatch) {
+			console.log('[BAX A3 Packer] Params не найдены');
+			return [];
+		}
+		
+		const paramsContent = paramsMatch[1];
+		const params = [];
+
+		const normalizedContent = paramsContent.replace(/\s+/g, ' ').trim();
+		
+		let i = 0;
+		let currentParam = '';
+		let bracketDepth = 0;
+		let inString = false;
+		let stringChar = null;
+		
+		while (i < normalizedContent.length) {
+			const char = normalizedContent[i];
+
+			if ((char === '"' || char === "'") && (i === 0 || normalizedContent[i-1] !== '\\')) {
+				if (!inString) {
+					inString = true;
+					stringChar = char;
+				} else if (char === stringChar) {
+					inString = false;
+					stringChar = null;
+				}
+				currentParam += char;
+				i++;
+				continue;
+			}
+			
+			if (inString) {
+				currentParam += char;
+				i++;
+				continue;
+			}
+
+			if (char === '[') {
+				bracketDepth++;
+				currentParam += char;
+				i++;
+				continue;
+			}
+			
+			if (char === ']') {
+				bracketDepth--;
+				currentParam += char;
+				i++;
+				continue;
+			}
+			
+			if (char === ',' && bracketDepth === 0) {
+				if (currentParam.trim()) {
+					params.push(parseParam(currentParam.trim()));
+				}
+				currentParam = '';
+				i++;
+				continue;
+			}
+			
+			currentParam += char;
+			i++;
+		}
+
+		if (currentParam.trim()) {
+			params.push(parseParam(currentParam.trim()));
+		}
+
+		return params;
+	} catch (error) {
+		return [];
+	}
+}
+
+async function getFunctionText(document, functionName) {
+	try {
+		const localPos = findFunctionDefinitionInDocument(document, functionName);
+		if (localPos) {
+			const text = document.getText();
+			const startIdx = document.offsetAt(localPos);
+
+			let braceCount = 0;
+			let inFunction = false;
+			let endIdx = startIdx;
+			
+			for (let i = startIdx; i < text.length; i++) {
+				const char = text[i];
+				if (char === '{') {
+					braceCount++;
+					inFunction = true;
+				} else if (char === '}') {
+					braceCount--;
+					if (inFunction && braceCount === 0) {
+						endIdx = i + 1;
+						break;
+					}
+				}
+			}
+			
+			return text.substring(startIdx, endIdx);
+		}
+
+		const fileUri = await findFunctionFile(functionName);
+		if (fileUri) {
+			const doc = await vscode.workspace.openTextDocument(fileUri);
+			return doc.getText();
+		}
+		
+		return null;
+	} catch (error) {
+		return null;
+	}
+}
+
 function activate(context) {
+
 	const packDisposable = vscode.commands.registerCommand('bax-a3-packer.packPBO', async function (uri) {
 		if (!uri || !uri.fsPath) {
-			vscode.window.showErrorMessage('Не выбрана папка для упаковки');
 			return;
 		}
 
@@ -21,7 +292,6 @@ function activate(context) {
 
 	const packDevDisposable = vscode.commands.registerCommand('bax-a3-packer.packPBODev', async function (uri) {
 		if (!uri || !uri.fsPath) {
-			vscode.window.showErrorMessage('Не выбрана папка для упаковки');
 			return;
 		}
 
@@ -80,7 +350,163 @@ function activate(context) {
 		await convertConfig(filePath, false);
 	});
 
-	context.subscriptions.push(packDisposable, packDevDisposable, configureDisposable, binarizeDisposable, unbinarizeDisposable);
+	const reindexDisposable = vscode.commands.registerCommand('bax-a3-packer.reindexFunctions', async function () {
+		vscode.window.showInformationMessage('Запуск переиндексации...');
+		
+		try {
+			await indexFunctions();
+			vscode.window.showInformationMessage(`Индексация завершена. Функций найдено: ${functionCache.size}`);
+		} catch (error) {
+			vscode.window.showErrorMessage(`Ошибка индексации: ${error.message}`);
+		}
+	});
+
+	indexFunctions().then(() => {
+		console.log('indexing true');
+	}).catch(error => {
+		console.error('indexing error:', error);
+	});
+	
+	const fileWatcher = vscode.workspace.createFileSystemWatcher('**/fn_*.sqf');
+	fileWatcher.onDidCreate((uri) => {
+		indexFunctions();
+	});
+	fileWatcher.onDidDelete((uri) => {
+		indexFunctions();
+	});
+
+	const definitionProvider = vscode.languages.registerDefinitionProvider(
+		{ language: 'sqf', scheme: 'file' },
+		{
+			async provideDefinition(document, position) {
+
+				const wordRange = document.getWordRangeAtPosition(
+					position,
+					/["']?\w+_fnc_\w+["']?/
+				);
+				
+				if (!wordRange) {
+					console.log('[BAX A3 Packer] Слово не найдено под курсором');
+					return null;
+				}
+				
+				const functionName = document.getText(wordRange).replace(/["']/g, '');
+
+				if (!/_fnc_/i.test(functionName)) {
+					return null;
+				}
+
+				const localPos = findFunctionDefinitionInDocument(document, functionName);
+				if (localPos) {
+					return new vscode.Location(document.uri, localPos);
+				}
+
+				const fileUri = await findFunctionFile(functionName);
+				if (fileUri) {
+					return new vscode.Location(fileUri, new vscode.Position(0, 0));
+				}
+
+				return null;
+			}
+		}
+	);
+
+	const hoverProvider = vscode.languages.registerHoverProvider(
+		{ language: 'sqf', scheme: 'file' },
+		{
+			async provideHover(document, position) {
+				
+				const wordRange = document.getWordRangeAtPosition(
+					position,
+					/["']?\w+_fnc_\w+["']?/
+				);
+				
+				if (!wordRange) {
+					return null;
+				}
+				
+				const functionName = document.getText(wordRange).replace(/["']/g, '');
+				
+				if (!/_fnc_/i.test(functionName)) {
+					return null;
+				}
+
+				const functionText = await getFunctionText(document, functionName);
+				
+				if (!functionText) {
+					const markdown = new vscode.MarkdownString();
+					markdown.appendCodeblock(functionName, 'sqf');
+					markdown.appendMarkdown('\n\n_Определение функции не найдено в проекте_');
+					return new vscode.Hover(markdown);
+				}
+
+				const params = extractParams(functionText);
+				
+				const markdown = new vscode.MarkdownString();
+				markdown.appendCodeblock(functionName, 'sqf');
+				
+				if (params.length > 0) {
+					markdown.appendMarkdown('\n\n**Параметры:**\n\n');
+					params.forEach((param, idx) => {
+						markdown.appendMarkdown(`${idx + 1}. \`${param}\`\n`);
+					});
+				} else {
+					markdown.appendMarkdown('\n\n_Параметры не обнаружены_');
+				}
+				
+				return new vscode.Hover(markdown);
+			}
+		}
+	);
+
+	const tokenTypes = ['function'];
+	const tokenModifiers = [];
+	const legend = new vscode.SemanticTokensLegend(tokenTypes, tokenModifiers);
+	
+	const semanticTokensProvider = {
+		provideDocumentSemanticTokens(document) {
+			const tokensBuilder = new vscode.SemanticTokensBuilder(legend);
+			const text = document.getText();
+
+			const regex = /\b\w+_fnc_\w+\b/gi;
+			let match;
+			let count = 0;
+			
+			while ((match = regex.exec(text)) !== null) {
+				const startPos = document.positionAt(match.index);
+				const endPos = document.positionAt(match.index + match[0].length);
+				
+				tokensBuilder.push(
+					new vscode.Range(startPos, endPos),
+					'function',
+					[]
+				);
+				count++;
+			}
+
+			return tokensBuilder.build();
+		}
+	};
+	
+	const semanticTokensDisposable = vscode.languages.registerDocumentSemanticTokensProvider(
+		{ language: 'sqf', scheme: 'file' },
+		semanticTokensProvider,
+		legend
+	);
+	
+	context.subscriptions.push(
+		packDisposable,
+		packDevDisposable,
+		configureDisposable,
+		binarizeDisposable,
+		unbinarizeDisposable,
+		reindexDisposable,
+		fileWatcher,
+		definitionProvider,
+		hoverProvider,
+		semanticTokensDisposable
+	);
+
 }
 
 async function configureFolderPath(folderPath) {
@@ -415,9 +841,11 @@ async function packToPBO(folderPath, devMode = false) {
 	});
 }
 
-function deactivate() {}
+function deactivate() {
+	console.log('deactivate');
+}
 
 module.exports = {
 	activate,
 	deactivate
-}
+};
